@@ -8,7 +8,14 @@ block_size=128  #longueur de chaque séquence
 max_iters=5000 #nombre d'itérations
 eval_interval=500 #intervalle d'évaluation de la loss
 learning_rate=3e-4 #taux d'apprentissage
-device='mps' #utilisation du GPU 
+
+if torch.backends.mps.is_available():
+    device = "mps"
+elif torch.cuda.is_available():
+    device = "cuda"
+else:
+    device = "cpu"
+
 eval_iters=200 #nombre d'itérations pour l'évaluation de la loss
 n_embed=384 #dimension des embeddings
 dropout=0.2 #taux de dropout
@@ -17,54 +24,46 @@ n_heads=6 #nombre de têtes d'attention
 
 
 
-torch.manual_seed(1337)
 
-with open('VER_9.txt', 'r', encoding='utf-8') as f:
-    text = f.read()
+class TextDataset:
+    """gestion de la base de données"""
+    def __init__(self, file_path):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            self.text = f.read()
 
-# Encodage: représentation sous forme de vecteur d'entier codé lettre par lettre 
-chars = sorted(list(set(text)))
-vocab_size = len(chars)
+        # Encodage: représentation sous forme de vecteur d'entier codé lettre par lettre 
+        self.chars = sorted(list(set(self.text)))
+        self.vocab_size = len(self.chars)
 
-stoi = {ch: i for i, ch in enumerate(chars)}
-itos = {i: ch for i, ch in enumerate(chars)}
-encode = lambda x: [stoi[i] for i in x]
-decode = lambda x: "".join([itos[i] for i in x])
+        self.stoi = {ch: i for i, ch in enumerate(self.chars)}
+        self.itos = {i: ch for i, ch in enumerate(self.chars)}
 
-encoded_text = torch.tensor(encode(text), dtype=torch.long)
+        self.encoded_text = torch.tensor(self.encode(self.text), dtype=torch.long)
 
-# Séparation en trainig data set et validation data set
-n = int(0.9 * len(encoded_text))
-train_data = encoded_text[:n]
-val_data = encoded_text[n:]
+        # Séparation en trainig data set et validation data set
+        n = int(0.9 * len(self.encoded_text))
+        self.train_data = self.encoded_text[:n]
+        self.val_data = self.encoded_text[n:]
 
-# On généralise l'exemple ci-dessus à tout le texte avec la notion de batch
-def get_batch(selection):
-    data = train_data if selection == 'train' else val_data
-    ix = torch.randint(len(data) - block_size, (batch_size,))
-    x = torch.stack([data[i:i+block_size] for i in ix])
-    y = torch.stack([data[i+1:i+block_size+1] for i in ix])
-    x, y = x.to(device), y.to(device)
-    return x, y
+    def encode(self, x):
+        return [self.stoi[i] for i in x]
 
-#évaluation de la loss avec une moyenn sur eval_iters itérations pour avoir moins de bruit
-@torch.no_grad() #Tout ce qui se passe n'est pas mémorisé pour le calcul du gradient
-def estimate_loss():
-    out = {}
-    model.eval() #mode évaluation
-    for split in ['train', 'val']:
-        losses = torch.zeros(eval_iters)
-        for k in range(eval_iters):
-            X, Y = get_batch(split)
-            logits, loss = model(X, Y)
-            losses[k] = loss.item()
-        out[split] = losses.mean()
-    model.train() #remettre le modèle en mode entrainement
-    return out
+    def decode(self, x):
+        return "".join([self.itos[i] for i in x])
 
-# SImple NN pour commencer : Bigram Language Model
-class BigramLanguageModel(nn.Module):
-    def __init__(self):
+    # On généralise l'exemple ci-dessus à tout le texte avec la notion de batch
+    def get_batch(self, selection):
+        data = self.train_data if selection == 'train' else self.val_data
+        ix = torch.randint(len(data) - block_size, (batch_size,))
+        x = torch.stack([data[i:i+block_size] for i in ix])
+        y = torch.stack([data[i+1:i+block_size+1] for i in ix])
+        x, y = x.to(device), y.to(device)
+        return x, y
+
+
+
+class Architecture(nn.Module):
+    def __init__(self, vocab_size):
         super().__init__()
         #On configure une table d'embedding qui va mapper chaque token de l'entrée à un vecteur de la taille du vocabulaire dont la valeur sera utilisée pour prédire le token suivant
         self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
@@ -236,27 +235,66 @@ class BatchNorm1d(nn.Module):
         out = self.gamma * x_hat + self.beta
         return out
 
-model = BigramLanguageModel()
-model = model.to(device)
-optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+class GPTTrainer:
+    """
+    Gestionnaire global encapsulant le modèle, l'optimiseur et la boucle d'apprentissage.
+    """
+    def __init__(self, dataset_path='VER_9.txt'):
+        """Initialise le modèle et l'optimiseur avec les hyperparamètres globaux."""
+        self.dataset = TextDataset(dataset_path)
+        self.model = Architechture(vocab_size=self.dataset.vocab_size)
+        self.model = self.model.to(device)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
 
-for steps in range(max_iters):
-    
-    if steps % eval_interval == 0:
-        losses = estimate_loss()
-        print(f"step {steps}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+    #évaluation de la loss avec une moyenn sur eval_iters itérations pour avoir moins de bruit
+    @torch.no_grad() #Tout ce qui se passe n'est pas mémorisé pour le calcul du gradient
+    def estimate_loss(self):
+        """Évalue et retourne la loss moyenne du modèle sur les datasets train et val."""
+        out = {}
+        self.model.eval() #mode évaluation
+        for split in ['train', 'val']:
+            losses = torch.zeros(eval_iters)
+            for k in range(eval_iters):
+                X, Y = self.dataset.get_batch(split)
+                logits, loss = self.model(X, Y)
+                losses[k] = loss.item()
+            out[split] = losses.mean()
+        self.model.train() #remettre le modèle en mode entrainement
+        return out
 
-    xb, yb = get_batch('train')    
-    logits, loss = model(xb, yb)
+    def train(self):
+        """Exécute la boucle d'entraînement principale du modèle."""
+        for steps in range(max_iters):
+            
+            if steps % eval_interval == 0:
+                losses = self.estimate_loss()
+                print(f"step {steps}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
 
-    optimizer.zero_grad(set_to_none=True) #on remet les gradients à zéro avant la backward pass
+            xb, yb = self.dataset.get_batch('train')    
+            logits, loss = self.model(xb, yb)
 
-    loss.backward() #calcul des gradients
+            self.optimizer.zero_grad(set_to_none=True) #on remet les gradients à zéro avant la backward pass
 
-    optimizer.step()#mise à jour des poids
+            loss.backward() #calcul des gradients
 
-#texte généré après entrainement
-idx = torch.zeros((1, 1), dtype=torch.long, device=device)
-print(decode(model.generate(idx, max_new_tokens=1000)[0].tolist()))
+            self.optimizer.step()#mise à jour des poids
 
-torch.save(model.state_dict(),'weights.pth')
+    def generate(self):
+        """Génère du texte via le modèle entraîné."""
+        #texte généré après entrainement
+        idx = torch.zeros((1, 1), dtype=device == 'cuda' and torch.long or torch.long, device=device)
+        print(self.dataset.decode(self.model.generate(idx, max_new_tokens=1000)[0].tolist()))
+
+    def save(self, path):
+        """Sauvegarde les poids du modèle."""
+        torch.save(self.model.state_dict(), path)
+
+    def load(self, path):
+        """Charge les poids d'un modèle."""
+        self.model.load_state_dict(torch.load(path))
+
+if __name__ == "__main__":
+    trainer = GPTTrainer(dataset_path='VER_9.txt')
+    trainer.train()
+    trainer.save('weights.pth')
+    trainer.generate()
