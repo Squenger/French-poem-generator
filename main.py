@@ -3,9 +3,9 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-batch_size=32#nombre de séquences traitées en parallèle
-block_size=128  #longueur de chaque séquence
-max_iters=5000 #nombre d'itérations
+batch_size=64#nombre de séquences traitées en parallèle
+block_size=256  #longueur de chaque séquence
+max_iters=6000 #nombre d'itérations
 eval_interval=500 #intervalle d'évaluation de la loss
 learning_rate=3e-4 #taux d'apprentissage
 
@@ -242,7 +242,7 @@ class GPTTrainer:
     def __init__(self, dataset_path='VER_9.txt'):
         """Initialise le modèle et l'optimiseur avec les hyperparamètres globaux."""
         self.dataset = TextDataset(dataset_path)
-        self.model = Architechture(vocab_size=self.dataset.vocab_size)
+        self.model = Architecture(vocab_size=self.dataset.vocab_size)
         self.model = self.model.to(device)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate)
 
@@ -294,7 +294,7 @@ class GPTTrainer:
         self.model.load_state_dict(torch.load(path))
 
 if __name__ == "__main__":
-    trainer = GPTTrainer(dataset_path='VER_9.txt')
+    trainer = GPTTrainer(dataset_path='Output/french_poetry_dataset.txt')
     trainer.train()
-    trainer.save('weights.pth')
+    trainer.save('weights/weights_french_poetry.pth')
     trainer.generate()
