@@ -38,6 +38,19 @@ Your few, I have nothing mode only your father,
 I three alway.
 ```
 
+### Visualizing Attention
+
+<img src="Output/attention_heatmapFR.png" width="600">
+
+This attention heatmap illustrates how the model distributes its "attention" during generation:
+*   **Axes**: They represent the sequence of generated characters. The vertical axis (Y) is the character currently being processed, and the horizontal axis (X) is the past context.
+*   **Intensity**: Brighter areas indicate strong attention. To predict a specific character (Y-axis), the model relied heavily on the corresponding character (X-axis).
+*   **Structure**: The triangular shape demonstrates causal masking (the model can only look at the past).
+*   **Remarks**:
+    *   **The Diagonal**: Highly active because a character often refers to itself.
+    *   **Bright Vertical Columns**: A bright column indicates a character (X-axis) that provides essential context for the rest of the sequence.
+    *   **Semantic Relations**: Bright spots between distant characters indicates grammatical or word-level dependencies.
+
 ## Architecture and Methods
 
 I structured the code using object-oriented principles. The key elements are divided into data manipulation, neural network architecture, and the training paradigm.
@@ -64,7 +77,7 @@ It automatically builds a vocabulary dictionary from the raw source text. It als
 
 ### Model Execution
 
-I encapsulated the entire model management logic inside the `GPTTrainer` class. This class uses the AdamW optimizer and evaluates Cross-Entropy loss. 
+I encapsulated the entire model management logic inside the `Model` class. This class uses the AdamW optimizer and evaluates Cross-Entropy loss. 
 
 I implemented several core methods inside this class:
 

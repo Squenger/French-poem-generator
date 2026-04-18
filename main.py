@@ -2,6 +2,9 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
 
 batch_size=64#nombre de séquences traitées en parallèle
 block_size=256  #longueur de chaque séquence
@@ -147,6 +150,7 @@ class Head(nn.Module):
         self.value = nn.Linear(n_embed, head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
         self.dropout = nn.Dropout(dropout)
+        self.last_attn = None
         
     def forward(self, x):
         B,T,C = x.shape
@@ -156,6 +160,7 @@ class Head(nn.Module):
         wei = q @ k.transpose(-2, -1) * self.head_size**-0.5 #(B,T,head_size) @ (B, head_size,T) -> (B,T,T)
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) #(B,T,T)
         wei = F.softmax(wei, dim=-1) #(B,T,T)
+        self.last_attn = wei.detach()
         wei = self.dropout(wei)
         v = self.value(x)
         out = wei @ v #(B,T,T) @ (B,T,head_size) -> (B,T,head_size)
@@ -235,11 +240,11 @@ class BatchNorm1d(nn.Module):
         out = self.gamma * x_hat + self.beta
         return out
 
-class GPTTrainer:
+class Model:
     """
-    Gestionnaire global encapsulant le modèle, l'optimiseur et la boucle d'apprentissage.
+    Gestionnaire global contenant le modèle, l'optimiseur et la boucle d'apprentissage.
     """
-    def __init__(self, dataset_path='VER_9.txt'):
+    def __init__(self, dataset_path='data/french_poetry_dataset.txt'):
         """Initialise le modèle et l'optimiseur avec les hyperparamètres globaux."""
         self.dataset = TextDataset(dataset_path)
         self.model = Architecture(vocab_size=self.dataset.vocab_size)
@@ -249,7 +254,7 @@ class GPTTrainer:
     #évaluation de la loss avec une moyenn sur eval_iters itérations pour avoir moins de bruit
     @torch.no_grad() #Tout ce qui se passe n'est pas mémorisé pour le calcul du gradient
     def estimate_loss(self):
-        """Évalue et retourne la loss moyenne du modèle sur les datasets train et val."""
+        """Evalue et retourne la loss moyenne du modèle sur les datasets train et val."""
         out = {}
         self.model.eval() #mode évaluation
         for split in ['train', 'val']:
@@ -263,7 +268,7 @@ class GPTTrainer:
         return out
 
     def train(self):
-        """Exécute la boucle d'entraînement principale du modèle."""
+        """Exécute la boucle d'entrainement principale du modèle."""
         for steps in range(max_iters):
             
             if steps % eval_interval == 0:
@@ -283,6 +288,8 @@ class GPTTrainer:
         """Génère du texte via le modèle entraîné."""
         #texte généré après entrainement
         idx = torch.zeros((1, 1), dtype=device == 'cuda' and torch.long or torch.long, device=device)
+        # On peut choisir un début de phrase à completer en remplacant idx par l'encodage du début de phrase qu'lon souhaite 
+        # exemple : idx = torch.tensor(self.dataset.encode("Bonjour"), dtype=torch.long, device=device).unsqueeze(0)
         print(self.dataset.decode(self.model.generate(idx, max_new_tokens=1000)[0].tolist()))
 
     def save(self, path):
@@ -291,10 +298,45 @@ class GPTTrainer:
 
     def load(self, path):
         """Charge les poids d'un modèle."""
-        self.model.load_state_dict(torch.load(path))
+        self.model.load_state_dict(torch.load(path, map_location=device))
+
+    def generate_and_save_heatmap(self, prompt=" ", max_new_tokens=50):
+        """Génère un texte et sauvegarde la carte d'attention"""
+
+        self.model.eval()
+        idx = torch.tensor(self.dataset.encode(prompt), dtype=torch.long, device=device).unsqueeze(0)
+        generated_idx = self.model.generate(idx, max_new_tokens)
+        
+        self.model(generated_idx)
+        
+        last_block = self.model.blocks[-1]
+        heads = last_block.sa.heads
+        all_attn = torch.stack([h.last_attn for h in heads]) # (n_heads, B, T, T)
+        avg_attn = all_attn.mean(dim=0)[0].cpu().numpy() # (T, T)
+        
+        tokens = [self.dataset.itos[int(i)] for i in generated_idx[0]]
+        
+
+        plt.figure(figsize=(30, 25))
+
+        heatmap = sns.heatmap(avg_attn, xticklabels=tokens, yticklabels=tokens, cmap='viridis', cbar_kws={"shrink": 0.5})
+
+        plt.xticks(rotation=0, fontsize=30)
+        plt.yticks(rotation=0, fontsize=30)
+        
+        cbar_axes = heatmap.figure.axes[-1]
+        cbar_axes.tick_params(labelsize=25)
+        
+        plt.title("Attention Heatmap", fontsize=40)
+        os.makedirs('Output', exist_ok=True)
+        plt.tight_layout()
+        plt.savefig('Output/attention_heatmap.png')
+        plt.close()
+        
+
+        print(f"texte généré : {self.dataset.decode(generated_idx[0].tolist())}")
 
 if __name__ == "__main__":
-    trainer = GPTTrainer(dataset_path='Output/french_poetry_dataset.txt')
-    trainer.train()
-    trainer.save('weights/weights_french_poetry.pth')
-    trainer.generate()
+    model = Model() 
+    model.load('weights/weights_french_poetry.pth')
+    model.generate_and_save_heatmap(prompt="L'amour", max_new_tokens=40)
