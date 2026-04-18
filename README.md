@@ -90,3 +90,5 @@ I implemented several core methods inside this class:
 *   `save(path)`: This method serializes and saves the model's trained weights to a file.
 
 *   `load(path)`: This method loads pre-existing weights, allowing me to resume training or execute text generation without retraining from scratch.
+
+*   `generate_and_save_heatmap(prompt, max_new_tokens)`: This method generates text and exports a visual heatmap of the attention weights from the model's final block to the `Output` directory. 
