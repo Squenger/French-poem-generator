@@ -1,8 +1,8 @@
-# French Poeme Generator : The Literary Style Copier 
+# The Literary Style Copier 
 
 I developed this deep learning project as an end-to-end implementation of an autoregressive character-level language model using PyTorch. 
 
-The architecture of the network is heavily inspired by the "Attention Is All You Need" paper. 
+The architecture of the network is heavily inspired by the "Attention Is All You Need" paper and by this [video](https://www.youtube.com/watch?v=kCc8FmEb1nY) from Andrej Karpathy. 
 
 I designed the project to be modular and object-oriented. You can train it on any dataset (a .txt file) and it will generate text in the same style and language as the dataset.
 
@@ -57,15 +57,15 @@ I structured the code using object-oriented principles. The key elements are div
 
 ### Network Architecture
 
-The network is a Decoder-only Transformer. It specifically incorporates the following components:
+The network is a decoder-only Transformer. It specifically incorporates the following components:
 
-*   **Embeddings**: Token embeddings to represent the character vocabulary and Positional Embeddings to encode sequence location information.
+*   **Embeddings**: Token embeddings to represent the character vocabulary and positional embeddings to encode sequence location information.
 
-*   **Attention Blocks**: A stack of Multi-Head Self-Attention layers. This allows the network to process relationships across the context dimension.
+*   **Attention Blocks**: A stack of multi-Head self-attention layers. This allows the network to process relationships across the context dimension.
 
 *   **Feed-Forward Network**: Linear neural network components with ReLU activation placed after the attention blocks.
 
-*   **Normalization & Regularization**: I applied Pre-Layer Normalization and Dropout layers to ensure training stability and prevent overfitting.
+*   **Normalization & Regularization**: I applied pre-Layer normalization and dropout layers to ensure training stability and prevent overfitting.
 
 *   **Output Layer**: A final linear transformation layer that generates a vector of logits for vocabulary prediction.
 
